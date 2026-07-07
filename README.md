@@ -26,6 +26,7 @@ stacks:
 | Class | TLS | LoadBalancer | Use when |
 |-------|-----|--------------|----------|
 | `ApiGatewayCertbot` | Let's Encrypt (Certbot) | Yes (external or internal) | NGINX terminates HTTPS on-cluster |
+| `ApiGatewayServerCertificate` | Operator-managed (Gandi, etc.) | Yes (external or internal) | CA-issued cert mounted from Secret |
 | `ApiGatewayNoCertificate` | None (HTTP only) | ClusterIP Service in manifest | TLS is handled by AWS ALB, GCP LB, etc. |
 
 ### Manifests produced
@@ -159,10 +160,46 @@ deploy.create_deploy_files()
 deploy.deploy_microservices()
 ```
 
+### Option C — HTTPS with Gandi or external CA
+
+Generate CSR and key files with the helper CLI (see ``certs/README.md``):
+
+```bash
+python -m pumpwood_deploy_api_gateway.tls_certificate generate-csr \
+  --server-name app.example.com \
+  --output-dir certs
+```
+
+After Gandi issues the certificate, build the NGINX chain:
+
+```bash
+python -m pumpwood_deploy_api_gateway.tls_certificate build-chain \
+  --leaf certs/gandi_domain.crt \
+  --intermediate certs/gandi_intermediate.crt \
+  --output certs/certificate.crt
+```
+
+```python
+import os
+from pumpwood_deploy.deploy import DeployPumpWood
+from pumpwood_deploy_api_gateway import ApiGatewayServerCertificate
+
+deploy.add_microservice(
+    ApiGatewayServerCertificate(
+        gateway_public_ip="203.0.113.10",
+        version=os.getenv("API_GATEWAY_SSL_SERVER"),
+        server_name="app.example.com",
+        certificate_crt_path="certs/certificate.crt",
+        certificate_key_path="certs/certificate.key",
+        repository="my-registry.example.com/",
+    ))
+```
+
 ### Environment variables
 
 ```bash
 API_GATEWAY_SSL=1.2.0    # pumpwood-nginx-ssl-gateway (Certbot)
+API_GATEWAY_SSL_SERVER=4.3  # nginx-ssl-server-certificate (Gandi)
 API_GATEWAY=1.2.0        # pumpwood-nginx-without-ssl (no TLS)
 ```
 
@@ -182,6 +219,21 @@ no changes — safe for rolling image updates.
 | `version` | Yes | — | Image tag for `pumpwood-nginx-ssl-gateway` |
 | `server_name` | No | `not_set` | DNS name for NGINX / Certbot |
 | `repository` | No | GCR default | Docker registry |
+| `health_check_url` | No | auth health path | Readiness probe on port 80 |
+| `root_redirect_url` | No | auth admin GUI | Redirect target for `/` |
+| `source_ranges` | No | `0.0.0.0/0` | Allowed CIDRs for external LB |
+
+### `ApiGatewayServerCertificate`
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `gateway_public_ip` | Yes | — | Static IP for LoadBalancer |
+| `version` | Yes | — | Image tag for `nginx-ssl-server-certificate` |
+| `certificate_crt_path` | Yes | — | Path to `certificate.crt` PEM chain |
+| `certificate_key_path` | Yes | — | Path to `certificate.key` private key |
+| `server_name` | No | `not_set` | DNS name for NGINX |
+| `repository` | No | GCR default | Docker registry |
+| `secret_name` | No | `apigateway-nginx-ssl` | Kubernetes Secret name |
 | `health_check_url` | No | auth health path | Readiness probe on port 80 |
 | `root_redirect_url` | No | auth admin GUI | Redirect target for `/` |
 | `source_ranges` | No | `0.0.0.0/0` | Allowed CIDRs for external LB |
@@ -222,6 +274,7 @@ Root `/` redirects to the auth admin GUI by default
 | Scenario | Recommended class |
 |----------|-------------------|
 | Bare-metal / VM cluster with public IP | `ApiGatewayCertbot` |
+| Gandi or corporate CA certificate | `ApiGatewayServerCertificate` |
 | GKE with internal-only access | `ApiGatewayCertbot` (private IP) |
 | AWS with ACM certificate on ALB | `ApiGatewayNoCertificate` + `IngressALB` |
 | Dev cluster behind corporate proxy | `ApiGatewayNoCertificate` |

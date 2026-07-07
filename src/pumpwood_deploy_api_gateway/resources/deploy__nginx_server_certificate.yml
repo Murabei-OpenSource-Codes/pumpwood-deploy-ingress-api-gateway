@@ -15,9 +15,9 @@ spec:
       imagePullSecrets:
         - name: dockercfg
       volumes:
-      - name: letsencrypt
-        persistentVolumeClaim:
-          claimName: apigateway-nginx-letsencrypt
+      - name: ssl-certificates
+        secret:
+          secretName: {secret_name}
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -29,11 +29,12 @@ spec:
                 - system
       containers:
       - name: apigateway-nginx
-        image: {repository}/pumpwood-nginx-ssl-gateway:{nginx_ssl_version}
+        image: {repository}/nginx-ssl-server-certificate:{nginx_ssl_version}
         imagePullPolicy: IfNotPresent
         volumeMounts:
-        - name: letsencrypt
-          mountPath: /etc/letsencrypt
+        - name: ssl-certificates
+          mountPath: /secrets
+          readOnly: true
         resources:
           requests:
             cpu: "1m"
@@ -42,12 +43,10 @@ spec:
             path: {health_check_url}
             port: 80
         ports:
-        # Consumers Ports
         - containerPort: 80
+        - containerPort: 443
         env:
         - name: SERVER_NAME
           value: "{server_name}"
-        - name: EMAIL
-          value: "{email_contact}"
         - name: ROOT_REDIRECT_URL
           value: "{root_redirect_url}"

@@ -1,0 +1,4 @@
+# TLS private material — never commit keys or issued certificates
+certs/*
+!certs/README.md
+!certs/.gitkeep

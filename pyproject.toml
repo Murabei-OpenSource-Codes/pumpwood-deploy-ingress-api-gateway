@@ -1,6 +1,6 @@
 [project]
 name = "pumpwood-deploy-ingress-api-gateway"
-version = "0.0.1"
+version = "0.0.2"
 description = "Package to assist deploy Pumpwood API Gateway on K8s"
 readme = "README.md"
 requires-python = ">=3.6"
